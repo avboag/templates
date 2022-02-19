@@ -1,4 +1,4 @@
-# from __future__ import annotations
+from __future__ import annotations
 
 __all__ = 'template', 'ParentParent'
 
@@ -15,28 +15,39 @@ class ParentParent:
         return self.cl(*args, _parent=self, **kwargs)
 
 
-@dataclass(frozen=True)
 class DefaultParent(ParentParent):
-    _arguments: list[tuple[str, Any]]
+    def __init__(self, cl, **kwargs):
+        ParentParent.__init__(self, cl)
 
-    def __init__(self, cl, arguments):
-        ParentParent.__init__(cl)
+        if any(key.startswith('_') for key in kwargs.keys()):
+            raise ValueError('Template params cannot begin with an underscore')
 
-        object.__setattr__(self, '_arguments', arguments)
-
-        for key, value in self._arguments:
-            if key.startswith('_'):
-                raise ValueError('Template params cannot begin with an underscore')
-
-            object.__setattr__(self, key, value)
+        self.__dict__.update(kwargs)
 
     def __repr__(self):
         binding_repr = ", ".join(
             (f"{value}" if False else f"{name}={value}")
-            for name, value in self._arguments
+            for name, value in self.__dict__.items()
         )
 
         return f"{self.cl.__name__}({binding_repr})"
+
+    def __eq__(self, other):
+        if not isinstance(other, DefaultParent):
+            return NotImplemented
+        return self.cl == other.cl and self.__dict__ == other.__dict__
+
+    def __hash__(self):
+        return hash(tuple(self.__dict__.items()))
+
+    def __getstate__(self):
+        return self.cl, self.__dict__
+
+    def __setstate__(self, state):
+        cl, dct = state
+
+        object.__setattr__(self, 'cl', cl)
+        self.__dict__.update(dct)
 
 
 @cache
@@ -45,7 +56,7 @@ def template_new_parent_creator(cls, *args, **kwargs):
 
     if isinstance(res, dict):
         del res['cls']
-        res = DefaultParent(cls, list(res.items()))
+        res = DefaultParent(cls, **res)
 
     return res
 
@@ -67,17 +78,9 @@ def template_getnewargs_ex(self):
     return TEMPLATE_NEW_UNPICKLE_ARGS
 
 
-def template_init_creator(init):
-    def template_init(self, *args, _parent, **kwargs):
-        # assert _parent is not None
-
-        return init(self, *args, **kwargs)
-
-    return template_init
-
-
 def template(cl):
-    cl.__init__ = template_init_creator(cl.__init__)
+    init = cl.__init__
+    cl.__init__ = lambda *args, _parent, **kwargs: init(*args, **kwargs)
 
     cl.__new__ = template_new
     cl.__getnewargs_ex__ = template_getnewargs_ex

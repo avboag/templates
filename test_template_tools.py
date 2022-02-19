@@ -10,7 +10,7 @@ from template_tools import template, ParentParent
 class A:
     @classmethod
     def _parent(cls, x: str = 'default'):
-        pass
+        return locals()
 
     def __init__(self, y):
         self.y = y

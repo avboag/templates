@@ -3,13 +3,29 @@ from __future__ import annotations
 import pickle
 from dataclasses import dataclass
 
+# CYTHON = True
+# if not CYTHON:
+import sys
+
+if "template_tools" in sys.modules:
+    del sys.modules["template_tools"]
+
 from template_tools import template, ParentParent
+
+# else:
+#     from sage.misc.cython import compile_and_load
+
+#     mod = compile_and_load(open("template_tools.py").read())
+#     template = mod.template
+#     ParentParent = mod.ParentParent
 
 
 @template
 class A:
+    __slots__ = "parent", "y"
+
     @classmethod
-    def _parent(cls, x: str = 'default'):
+    def _parent(cls, x: str = "default"):
         return locals()
 
     def __init__(self, y):
@@ -44,7 +60,7 @@ class CustomBParent(ParentParent):
 @template
 class B:
     @classmethod
-    def _parent(cls, x: str = 'default'):
+    def _parent(cls, x: str = "default"):
         return CustomBParent(cls, x)
 
     def __init__(self, y):
@@ -62,13 +78,15 @@ class B:
         return hash((self.parent, self.y))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    Aa = A("a")
+
     assert pickle.loads(pickle.dumps(A)) == A
-    assert pickle.loads(pickle.dumps(A('a'))) == A('a')
-    assert pickle.loads(pickle.dumps(A('b')(5))) == A('b')(5)
+    assert pickle.loads(pickle.dumps(A("a"))) == A("a")
+    assert pickle.loads(pickle.dumps(A("b")(5))) == A("b")(5)
 
     assert pickle.loads(pickle.dumps(B)) == B
-    assert pickle.loads(pickle.dumps(B('a'))) == B('a')
-    assert pickle.loads(pickle.dumps(B('b')(5))) == B('b')(5)
+    assert pickle.loads(pickle.dumps(B("a"))) == B("a")
+    assert pickle.loads(pickle.dumps(B("b")(5))) == B("b")(5)
 
-    assert B('a') + B('b') == B('a_b')
+    assert B("a") + B("b") == B("a_b")

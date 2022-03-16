@@ -1,15 +1,24 @@
-from __future__ import annotations
+# cython: linetrace=True
+# # from __future__ import annotations
 
 __all__ = 'template', 'ParentParent'
 
-from dataclasses import dataclass
-import pickle
 from functools import cache
 
+# @dataclass(frozen=True, slots=True)
+cdef class ParentParent:
+    __slots__ = 'cl',
 
-@dataclass(frozen=True, slots=True)
-class ParentParent:
-    cl: type
+    def __init__(self, cl):
+        self.cl = cl
+
+    def __eq__(self, other):
+        if isinstance(self, ParentParent) and isinstance(other, ParentParent):
+            return self.cl == other.cl
+        return NotImplemented
+
+    def __hash__(self):
+        return hash(self.cl)
 
     def __call__(self, *args, **kwargs):
         res = object.__new__(self.cl)

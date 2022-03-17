@@ -1,99 +1,125 @@
 from __future__ import annotations
-
-__all__ = 'template', 'ParentParent'
+import inspect
+from typing import Callable, ClassVar, TypeVar, Any, get_args, get_origin
 
 from dataclasses import dataclass
-import pickle
 from functools import cache
+
+__all__ = "Template", "Parent", "parent_method"
+
+parent_method = classmethod
+
+
+@dataclass
+class _parent_method:
+    func: Callable
+
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+
+        if hasattr(self.func, "__get__"):
+            return self.func.__get__(instance, owner)
+
+        return bound_parent_method(self.func, instance)
+
+
+globals()["parent_method"] = _parent_method
+
+
+@dataclass
+class bound_parent_method:
+    func: Callable
+    val: Any
+
+    def __call__(self, *args, **kwargs):
+        return self.func(self.val, *args, **kwargs)
 
 
 @dataclass(frozen=True, slots=True)
-class ParentParent:
+class Parent:
     cl: type
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any):
         res = object.__new__(self.cl)
         res.parent = self
         res.__init__(*args, **kwargs)
 
         return res
-        # The reason we don't do this:
-        # return self.cl(*args, _parent=self, **kwargs)
-        # is that then _parent would get passed to the __init__
-        # in addition to the proper arguments.
-        # We could wrap __init__ to accomodate this, but
-        # profiling showed the wrapping takes a significant performance
-        # overhead, and this is the more efficient solution.
 
-class DefaultParent(ParentParent):
-    def __init__(self, cl, **kwargs):
-        ParentParent.__init__(self, cl)
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(f"{type(self)} {name}")
 
-        if any(key.startswith('_') for key in kwargs.keys()):
-            raise ValueError('Template params cannot begin with an underscore')
+        res = getattr(object.__getattribute__(self, "cl"), name)
 
-        self.__dict__.update(kwargs)
+        if isinstance(res, _parent_method):
+            res = res.__get__(self)
 
-    def __repr__(self):
-        binding_repr = ", ".join(
-            (f"{value}" if False else f"{name}={value}")
-            for name, value in self.__dict__.items()
+        return res
+
+
+Self = TypeVar("Self")
+
+
+class NewNoneType:
+    pass
+
+
+NewNone = NewNoneType()
+
+
+def get_fields(cl: type) -> dict[str, tuple[Any, Any]]:
+    annots = inspect.get_annotations(cl, eval_str=True)
+    keys = set(annots.keys()).union(cl.__dict__.keys())
+
+    return {
+        key: (annots.get(key, NewNone), cl.__dict__.get(key, NewNone)) for key in keys
+    }
+
+
+class Template:
+    _Parent: type[Parent]
+    ParentExtras: type[Parent] = Parent
+    parent: Parent
+
+    def __class_getitem__(cls: type[Self], args: Any) -> type[Self]:
+        return cls._Parent(cls, *args) if isinstance(args, tuple) else cls._Parent(cls, args)  # type: ignore - this is actually a parent and not a deriving class, but it should behave similarly.
+
+    def __init_subclass__(cls) -> None:
+        dct = {}
+
+        for scls in cls.mro()[::-1]:
+            dct.update(get_fields(scls))
+
+        fields = {}
+
+        for key, (annot, val) in dct.items():
+            if get_origin(annot) is ClassVar:
+                (type_,) = get_args(annot)
+                fields[key] = (type_, val)
+
+        content = {
+            key: val for key, (annot, val) in fields.items() if val is not NewNone
+        }
+        content["__annotations__"] = {
+            key: annot for key, (annot, _val) in fields.items()
+        }
+        content["__module__"] = cls.__module__
+
+        cls._Parent = dataclass(frozen=True)(
+            type(
+                f"{cls.__name__}._Parent",
+                (cls.ParentExtras,),
+                content,
+            )
         )
 
-        return f"{self.cl.__name__}({binding_repr})"
-
-    def __eq__(self, other):
-        if not isinstance(other, DefaultParent):
-            return NotImplemented
-        return self.cl == other.cl and self.__dict__ == other.__dict__
-
-    def __hash__(self):
-        return hash(tuple(self.__dict__.items()))
-
-    def __getstate__(self):
-        return self.cl, self.__dict__
-
-    def __setstate__(self, state):
-        cl, dct = state
-
-        object.__setattr__(self, 'cl', cl)
-        self.__dict__.update(dct)
+        for key in fields.keys():
+            setattr(cls, key, property(lambda self: getattr(self.parent, key)))
 
 
-@cache
-def template_new_parent_creator(cls, *args, **kwargs):
-    res = cls._parent(*args, **kwargs)
-
-    if isinstance(res, dict):
-        del res['cls']
-        res = DefaultParent(cls, **res)
-
-    return res
-
-
-def template_new(cls, *args, _real=False, **kwargs):
-    """
-    If _real=False, create the appropriate parent.
-    If _real=True, create a clean object of this class.
-    Note that this object cannot be used directly as it has no
-    parent. This option is provided solely for pickle.
-    """
-
-    if _real:
-        return object.__new__(cls)
-
-    return template_new_parent_creator(cls, *args, **kwargs)
-
-
-TEMPLATE_NEW_UNPICKLE_ARGS = ((), {'_real': True})
-
-
-def template_getnewargs_ex(self=None):
-    return TEMPLATE_NEW_UNPICKLE_ARGS
-
-
-def template(cl):
-    cl.__new__ = template_new
-    cl.__getnewargs_ex__ = template_getnewargs_ex
-
-    return cl
+def parent(x: Self) -> type[Self]:
+    if isinstance(x, Template):
+        return x.parent
+    return type(x)

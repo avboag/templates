@@ -109,9 +109,20 @@ class ParentDeferProperty:
         return getattr(instance.parent, self.attr_name)
 
 
+TEMPLATE_NEW_UNPICKLE_ARGS = ((), {"_unpickling": True})
+
+
 class Template:
     _Parent: type[Parent]
     parent: Parent
+
+    def __new__(cls, *_args: Any, _unpickling: bool = False, **_kwargs: Any):
+        if _unpickling:
+            return object.__new__(cls)
+        raise TypeError(f"Template class {cls.__qualname__} instantiated directly.")
+
+    def __getnewargs_ex__(self):
+        return TEMPLATE_NEW_UNPICKLE_ARGS
 
     def __class_getitem__(cls: type[Self], args: Any) -> type[Self]:
         return cls._Parent(cls, *args) if isinstance(args, tuple) else cls._Parent(cls, args)  # type: ignore - this is actually a parent and not a deriving class, but it should behave similarly.

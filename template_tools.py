@@ -51,7 +51,7 @@ class bound_parent_method(Generic[P, R, T]):
         return self.func(self.val, *args, **kwargs)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, repr=False, slots=True)
 class Parent:
     cl: type
 

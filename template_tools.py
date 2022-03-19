@@ -29,14 +29,19 @@ R = TypeVar("R")
 class _parent_method(Generic[T]):
     func: Any
 
-    def __get__(self, instance: T, owner: Optional[type[T]] = None):
+    def __get__(self, instance: T, owner: Optional[type[T]] = None) -> Any:
         if instance is None:
             return self
 
-        if hasattr(self.func, "__get__"):
-            return self.func.__get__(instance, owner)
+        f = self.func
+        p = instance.parent
 
-        return bound_parent_method(self.func, instance)
+        try:
+            getter = f.__get__
+        except AttributeError:
+            return bound_parent_method(f, p)
+        else:
+            return getter(p, owner)
 
 
 globals()["parent_method"] = _parent_method
@@ -69,7 +74,7 @@ class Parent:
         res: Any = getattr(object.__getattribute__(self, "cl"), name)
 
         if isinstance(res, _parent_method):
-            res = res.__get__(self)  # type: ignore
+            res = res.__get__(self) # type: ignore
 
         return res
 
@@ -132,7 +137,8 @@ class Template:
             return object.__new__(cls)
         raise TypeError(f"Template class {cls.__qualname__} instantiated directly.")
 
-    def __getnewargs_ex__(self):
+    @staticmethod
+    def __getnewargs_ex__():
         return TEMPLATE_NEW_UNPICKLE_ARGS
 
     def __class_getitem__(cls: type[Self], args: Any) -> type[Self]:

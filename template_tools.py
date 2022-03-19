@@ -144,12 +144,16 @@ class Template:
         for scls in cls.mro()[::-1]:
             dct.update(get_fields(scls))
 
-        fields: dict[str, tuple[str, Any | NewNoneType]] = {
-            key: (inner_annot, val)
-            for key, (annot, val) in dct.items()
-            if annot is not None
-            and (inner_annot := parse_parent_var(annot)) is not None
-        }
+        fields: dict[str, tuple[str, Any | NewNoneType]] = {}
+        for key, (annot, val) in dct.items():
+            if annot is None:
+                continue
+
+            inner_annot = parse_parent_var(annot)
+            if inner_annot is None:
+                continue
+
+            fields[key] = (inner_annot, val)
 
         content: dict[str, Any] = {
             key[7:]: val for key, (_, val) in dct.items() if key.startswith("_parent")

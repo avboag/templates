@@ -113,6 +113,17 @@ TEMPLATE_NEW_UNPICKLE_ARGS = ((), {"_unpickling": True})
 
 
 class Template:
+    """
+    Classes deriving from this class are templates.
+
+    Template parameters are declared as dataclass parameters, but should be annotated as ClassVar-s.
+    See test_template_tools for examples.
+
+    To define template fields, declare them as ClassVars.
+    To define parent methods (and properties), use the parent_method decorator.
+    To define parent dunder methods, write them normally, but prefix the name with "_parent". Do not use the parent_method decorator.
+    """
+
     _Parent: type[Parent]
     parent: Parent
 
